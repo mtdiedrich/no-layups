@@ -83,9 +83,37 @@ GAP_FILL_MAX_FRACTION_OF_FPS = 0.25
 SAVGOL_POLYORDER = 2
 POOR_TRACKING_MAX_MISSING_FRACTION = 0.25
 
-# Section 7.6 — Stage 6 key-event detection (address portion used by Stage 5's
-# Pass A in M2; top/impact detection lands in M4).
+# Section 7.6 — Stage 6 key-event detection.
 TAKEAWAY_SEARCH_FRACTION = 0.4
 TAKEAWAY_SPEED_THRESHOLD_MPS = 0.4
 TAKEAWAY_CONSECUTIVE_FRAMES = 3
+# SPEC DEVIATION (Section 7.6 step 1), same root cause as MIN_BACKSWING_RISE_M
+# below: the spec's takeaway trigger is an absolute 0.4 m/s, but m/s is a
+# function of the playback timeline, so slow-motion footage never reaches it
+# and the clip dies at address detection before the swing gate is ever
+# consulted. The trigger is therefore the *smaller* of the spec's absolute
+# threshold and this fraction of the clip's own peak lead-wrist speed, which
+# scales with the footage. Taking the min means normal-speed footage keeps
+# exactly the spec's 0.4 m/s behaviour -- the relative term can only ever make
+# detection more sensitive, never less.
+TAKEAWAY_SPEED_FRACTION_OF_PEAK = 0.05
 ADDRESS_LOOKBACK_S = 0.4
+TOP_WINDOW_ADDRESS_MARGIN = 5
+TOP_WINDOW_IMPACT_MARGIN = 3
+MIN_ARGMAX_WINDOW_FRAMES = 4
+# Frames reserved after `top` so there is room to locate impact.
+IMPACT_MIN_FRAMES_AFTER_TOP = 3
+# SPEC DEVIATION (Section 7.6 step 3): the spec gates "did a swing happen?"
+# on lead-wrist speed exceeding an absolute 3.0 m/s. Speed in m/s is a
+# function of the playback timeline, so slow-motion footage -- extremely
+# common for swing video -- never reaches it (a real 40 m/s swing filmed at
+# 240fps and played at 30fps reads as ~5 m/s; the reference clip peaks at
+# 1.6 m/s). Distance in metres is invariant to playback rate, so the gate is
+# instead "did the lead wrist actually rise into a backswing?".
+MIN_BACKSWING_RISE_M = 0.20
+
+# Section 8.4 — phase-percent anchors for trajectory normalization.
+PHASE_PERCENT_ADDRESS = 0
+PHASE_PERCENT_TOP = 40
+PHASE_PERCENT_IMPACT = 65
+PHASE_PERCENT_LAST_FRAME = 100
