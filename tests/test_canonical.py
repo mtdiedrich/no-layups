@@ -49,12 +49,10 @@ def test_address_hip_line_is_level_and_lead_hip_is_positive_x():
 
 
 def test_left_handed_mirror_sign_convention():
-    """SPEC DEVIATION (see canonical.py docstring): Section 7.5's handedness-aware
-    formula plus the 6.2 mirror puts the anatomical LEFT hip at x > 0 after
-    mirroring a left-handed swing -- the same convention an unmirrored
-    right-handed swing has. Section 13.1's prose states the opposite; this
-    test asserts the formula's actual, self-consistent behavior."""
+    """Section 13.1: after mirroring a left-handed swing, the anatomical
+    right hip has x > 0 (see canonical.py docstring for why +X is built from
+    the fixed anatomical hips rather than lead/trail)."""
     frames = _synthetic_frames()
     out = transform(frames, address_idx=0, handedness="left")
-    assert out["left_hip"][0][0] > 0
-    assert out["right_hip"][0][0] < 0
+    assert out["right_hip"][0][0] > 0
+    assert out["left_hip"][0][0] < 0

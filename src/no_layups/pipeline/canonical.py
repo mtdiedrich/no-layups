@@ -1,7 +1,5 @@
 import numpy as np
 
-from .. import config
-
 
 def _mid(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return (a + b) / 2.0
@@ -16,14 +14,18 @@ def transform(
 ) -> dict[str, np.ndarray]:
     """Section 6.1 / 7.5: canonical frame anchored at the address joint positions.
 
-    NOTE — SPEC DEVIATION (documented, not silent): Section 7.5's formula uses
-    handedness-aware lead/trail hips for +X (matching Section 6.1's "trail hip
-    toward lead hip" definition and the 6.2 lead()/trail() helpers). Combined
-    with the 6.2 left-handed mirror, this makes the anatomical LEFT hip end up
-    at x > 0 after mirroring a left-handed swing — the same convention a
-    right-handed swing has unmirrored. Section 13.1's prose describes the
-    opposite ("anatomical right hip has x > 0"); we follow the normative 7.5
-    formula and flag the discrepancy for the user to confirm.
+    RESOLVED SPEC AMBIGUITY: +X is built from the fixed anatomical hips
+    (left - right), never handedness-adjusted. This is the only reading under
+    which the Section 6.2 left-handed mirror does anything meaningful: if +X
+    were instead built from lead/trail (handedness-aware), lead would already
+    land on +X for both handedness cases by construction, and the mirror step
+    would flip it back off for lefties only -- undoing the one thing that was
+    already consistent. Building +X from the fixed anatomical hips makes the
+    mirror the sole handedness-dependent step, matches Section 13.1's test
+    ("anatomical right hip has x > 0" for a mirrored left-handed swing), and
+    is what's implemented and tested here. lead()/trail() remain correct
+    everywhere else (metrics, the lead-wrist speed series) -- only this axis
+    construction is anatomical-fixed rather than lead/trail-relative.
     """
     left_shoulder = xyz_by_joint["left_shoulder"][address_idx]
     right_shoulder = xyz_by_joint["right_shoulder"][address_idx]
@@ -32,9 +34,7 @@ def transform(
 
     up = _normalize(_mid(left_shoulder, right_shoulder) - _mid(left_hip, right_hip))
 
-    lead_hip = xyz_by_joint[config.lead("hip", handedness)][address_idx]
-    trail_hip = xyz_by_joint[config.trail("hip", handedness)][address_idx]
-    x_raw = lead_hip - trail_hip
+    x_raw = left_hip - right_hip
     x_axis = _normalize(x_raw - np.dot(x_raw, up) * up)
 
     z_axis = np.cross(x_axis, up)
