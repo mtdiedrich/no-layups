@@ -8,3 +8,4 @@ htmlcov/
 build/
 dist/
 docs/spec/
+.claude/
