@@ -9,3 +9,4 @@ build/
 dist/
 docs/spec/
 .claude/
+data/
