@@ -1,10 +1,23 @@
 import argparse
+import json
 import sys
+from pathlib import Path
 
 
 def _process(args: argparse.Namespace) -> int:
-    print("process is not implemented until milestone M2", file=sys.stderr)
-    return 1
+    from no_layups.pipeline import PipelineError, run_pipeline
+
+    def on_progress(step: str) -> None:
+        print(f"[{step}]", file=sys.stderr)
+
+    try:
+        swing = run_pipeline(Path(args.video), args.handedness, on_progress)
+    except PipelineError as exc:
+        print(f"error: {exc.code}: {exc.message}", file=sys.stderr)
+        return 1
+
+    Path(args.output).write_text(json.dumps(swing, indent=2))
+    return 0
 
 
 def _serve(args: argparse.Namespace) -> int:

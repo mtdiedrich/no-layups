@@ -32,6 +32,12 @@ uv run no-layups serve
 The app is fully usable at `http://127.0.0.1:8000/` with no other services
 running.
 
+To run the pose-extraction pipeline directly on a video without the web UI:
+
+```bash
+uv run no-layups process path/to/swing.mp4 --handedness right -o out.swing.json
+```
+
 Run all commands (pytest, the CLI, uvicorn) via `uv run ...` from the repo
 root — never invoke a system `python`/`pip` directly.
 
