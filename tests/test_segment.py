@@ -4,6 +4,7 @@ import pytest
 from no_layups import config
 from no_layups.pipeline.errors import PipelineError
 from no_layups.pipeline.segment import (
+    wrist_speed,
     detect_address,
     detect_keyframes,
     detect_takeaway_start,
@@ -88,6 +89,27 @@ def test_stationary_series_raises_no_full_swing():
     with pytest.raises(PipelineError) as exc:
         detect_keyframes(wrist_xyz, 30.0)
     assert exc.value.code == "no_full_swing"
+
+
+def test_address_waggle_does_not_trigger_takeaway():
+    """A waggle oscillates and returns; a takeaway translates away and stays.
+    The lowered playback-invariant speed trigger fires on both, so net
+    displacement is what separates them. Regression test for the reference
+    clip picking frame 1, ~2 s before the lead wrist actually left address."""
+    fps = 30.0
+    wrist_xyz, truth = _build_wrist_path(fps)
+    # Superimpose an oscillating waggle across the whole address hold. Its peak
+    # speed sits above the relative trigger but its net displacement is ~0.
+    hold = truth["address"] + round(0.4 * fps)
+    t = np.arange(hold)
+    wrist_xyz[:hold, 0] += 0.01 * np.sin(2 * np.pi * t / 5.0)
+
+    v = wrist_speed(wrist_xyz, fps)
+    assert v[1:hold].max() > takeaway_speed_threshold(v), "waggle must beat the speed trigger"
+
+    detected = detect_keyframes(wrist_xyz, fps)
+    assert abs(detected["address"] - truth["address"]) <= 3
+    assert abs(detected["top"] - truth["top"]) <= 3
 
 
 def test_takeaway_threshold_never_exceeds_the_spec_absolute():

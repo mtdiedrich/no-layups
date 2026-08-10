@@ -57,16 +57,47 @@ def takeaway_speed_threshold(v: np.ndarray) -> float:
     return min(config.TAKEAWAY_SPEED_THRESHOLD_MPS, relative)
 
 
+def _net_displacement_floor(wrist_xyz: np.ndarray) -> float:
+    """How far the lead wrist must actually travel for motion to count as a
+    takeaway rather than a waggle, in metres.
+
+    Scaled off the wrist's own total range along its widest axis, so it is
+    invariant to both playback rate and the golfer's size/distance from camera.
+    """
+    extent = 0.0
+    for axis in range(3):
+        column = wrist_xyz[:, axis]
+        if np.all(np.isnan(column)):
+            continue
+        extent = max(extent, float(np.nanmax(column) - np.nanmin(column)))
+    return config.TAKEAWAY_MIN_NET_DISPLACEMENT_FRACTION * extent
+
+
 def detect_takeaway_start(wrist_xyz: np.ndarray, fps: float) -> int:
     """Section 7.6 step 1: first frame in [0, 0.4N] where speed exceeds the
-    threshold for 3 consecutive frames."""
+    threshold for 3 consecutive frames.
+
+    SPEC DEVIATION: the speed run must additionally be confirmed by net
+    displacement -- see TAKEAWAY_MIN_NET_DISPLACEMENT_FRACTION. Without it the
+    lowered (playback-invariant) speed trigger fires on address waggle: on the
+    reference clip it picked frame 1, roughly two seconds before the lead wrist
+    left address, and because the turn metrics are differences measured against
+    the address frame, that moved shoulder_turn_top by a factor of three.
+    """
     n = len(wrist_xyz)
     v = wrist_speed(wrist_xyz, fps)
     threshold = takeaway_speed_threshold(v)
     limit = int(config.TAKEAWAY_SEARCH_FRACTION * n)
     consecutive = config.TAKEAWAY_CONSECUTIVE_FRAMES
+    window = max(1, round(config.TAKEAWAY_CONFIRM_WINDOW_FRACTION * n))
+    floor = _net_displacement_floor(wrist_xyz)
+
     for t in range(0, limit + 1):
-        if t + consecutive <= n and np.all(v[t : t + consecutive] > threshold):
+        if t + consecutive > n or not np.all(v[t : t + consecutive] > threshold):
+            continue
+        net = wrist_xyz[min(n - 1, t + window)] - wrist_xyz[t]
+        # Missing data cannot disconfirm; fall back to the speed run alone.
+        if np.isnan(net).any() or float(np.linalg.norm(net)) >= floor:
             return t
     raise PipelineError("no_full_swing", "no swing motion detected in the first part of the clip")
 

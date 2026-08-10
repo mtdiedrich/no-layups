@@ -97,6 +97,21 @@ TAKEAWAY_CONSECUTIVE_FRAMES = 3
 # exactly the spec's 0.4 m/s behaviour -- the relative term can only ever make
 # detection more sensitive, never less.
 TAKEAWAY_SPEED_FRACTION_OF_PEAK = 0.05
+# Lowering the speed trigger above buys sensitivity on slow-motion footage at
+# the cost of specificity: a golfer's address waggle is slow but not still, and
+# on the reference clip it peaks at 0.20 m/s -- under the spec's absolute 0.4
+# but well over 5% of that clip's 1.44 m/s peak. Speed alone cannot separate
+# the two, so a candidate must also be confirmed by NET displacement: a waggle
+# oscillates and returns (net ~ 0), a real takeaway translates away and stays.
+# The lead wrist must therefore travel at least this fraction of its own total
+# range over the confirmation window before a candidate is accepted.
+TAKEAWAY_MIN_NET_DISPLACEMENT_FRACTION = 0.05
+# The confirmation window is a fraction of clip length, not a fixed number of
+# seconds. A slow-motion clip of the same swing has proportionally more frames,
+# so a clip-relative window covers the same portion of the real motion at any
+# playback rate, while a fixed 0.5 s window would shrink to nothing at 8x slow
+# motion and reject the genuine takeaway along with the waggle.
+TAKEAWAY_CONFIRM_WINDOW_FRACTION = 0.05
 ADDRESS_LOOKBACK_S = 0.4
 TOP_WINDOW_ADDRESS_MARGIN = 5
 TOP_WINDOW_IMPACT_MARGIN = 3
