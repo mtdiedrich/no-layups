@@ -48,8 +48,20 @@ uv run pytest
 ## Known accuracy limits
 
 - 3D is inferred from a single 2D camera view and is approximate. Absolute
-  positions are unreliable; joint angles and rotations are the trustworthy
-  output.
+  positions are unreliable, and the depth axis is by far the weakest channel —
+  measured on the bundled reference clip, MediaPipe's frame-to-frame depth
+  jitter runs 2-3x its in-image jitter. Angles that lie in the image plane are
+  trustworthy; **rotations about the vertical axis are not**. On a face-on
+  clip the shoulders turn edge-on to the camera exactly at the top of the
+  backswing, which is where the estimate is weakest: the reference swing
+  measures ~12° of shoulder turn where the true value is nearer 90°.
+- Because of that, the 8 metrics are rated against a bundled **reference swing
+  processed through the same pipeline** (Section 9.2), so a systematic depth
+  bias largely cancels. Compare the deltas, not the absolute numbers. A clip
+  shot from a very different angle than the reference cancels less cleanly.
+- `spine_tilt_address` is reported as `null` by design. The canonical frame
+  defines "up" as the address trunk vector, so an absolute spine tilt at
+  address is identically zero and cannot be measured; see `metrics.py`.
 - The skeleton may appear mirrored depending on which side the camera is on;
   the viewer has a mirror toggle.
 - Key-event detection (address / top of backswing / impact) is heuristic and

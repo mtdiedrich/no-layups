@@ -5,7 +5,7 @@ from typing import Callable
 import numpy as np
 
 from .. import config
-from . import camera_check, canonical, filtering, pose, segment, video_io
+from . import camera_check, canonical, filtering, metrics, pose, segment, video_io
 from .errors import PipelineError
 
 __all__ = ["run_pipeline", "PipelineError"]
@@ -25,11 +25,7 @@ def _build_frames(xyz_by_joint: dict, fps: float) -> list[dict]:
 
 
 def run_pipeline(video_path: Path, handedness: str, on_progress: Callable[[str], None]) -> dict:
-    """Returns the swing.json dict (Section 5.2). Raises PipelineError.
-
-    M2 implements Stages 1-5 only: keyframes/metrics/trajectories stay null.
-    Full key-event segmentation (Stage 6) and metrics (Stage 7) land in M4.
-    """
+    """Returns the swing.json dict (Section 5.2). Raises PipelineError."""
     on_progress("validating")
     probe_result = video_io.probe(video_path)
     video_io.validate(probe_result)
@@ -47,9 +43,36 @@ def run_pipeline(video_path: Path, handedness: str, on_progress: Callable[[str],
     smoothed = filtering.process(raw, probe_result.fps)
 
     on_progress("segmenting")
-    lead_wrist = config.lead("wrist", handedness)
-    address_idx = segment.detect_address(smoothed[lead_wrist], probe_result.fps)
+    lead_wrist_xyz = smoothed[config.lead("wrist", handedness)]
+    try:
+        keyframes = segment.detect_keyframes(lead_wrist_xyz, probe_result.fps)
+        address_idx = keyframes["address"]
+    except PipelineError as exc:
+        if exc.code != "no_full_swing":
+            raise
+        keyframes = None
+        warnings.append("no_full_swing")
+        try:
+            address_idx = segment.detect_address(lead_wrist_xyz, probe_result.fps)
+        except PipelineError:
+            address_idx = 0
+
+    # Section 7.4 step 3: the tracking-quality gate covers address..impact,
+    # falling back to the whole clip when segmentation could not place them.
+    if keyframes is not None:
+        filtering.check_quality(smoothed, keyframes["address"], keyframes["impact"])
+    else:
+        filtering.check_quality(smoothed, 0, raw.frame_count - 1)
+
     canonical_frames = canonical.transform(smoothed, address_idx, handedness)
+
+    if keyframes is not None:
+        on_progress("computing")
+        metrics_dict = metrics.compute_metrics(canonical_frames, keyframes, handedness)
+        trajectories_dict = metrics.compute_trajectories(canonical_frames, keyframes, handedness)
+    else:
+        metrics_dict = None
+        trajectories_dict = None
 
     return {
         "version": 1,
@@ -65,7 +88,7 @@ def run_pipeline(video_path: Path, handedness: str, on_progress: Callable[[str],
         },
         "joints": list(config.JOINTS),
         "frames": _build_frames(canonical_frames, probe_result.fps),
-        "keyframes": None,
-        "metrics": None,
-        "trajectories": None,
+        "keyframes": keyframes,
+        "metrics": metrics_dict,
+        "trajectories": trajectories_dict,
     }
