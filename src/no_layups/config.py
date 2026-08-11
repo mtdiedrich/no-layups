@@ -78,9 +78,22 @@ POSE_MIN_DETECTION_CONFIDENCE = 0.5
 POSE_MIN_TRACKING_CONFIDENCE = 0.5
 
 # Section 7.4 — Stage 4 gap-fill + smoothing.
+# DIAGNOSTIC ONLY. The pipeline no longer masks on visibility -- see the
+# SPEC DEVIATION in filtering.process(). This remains the threshold that
+# tools/overlay_pose.py fades at and tools/tracking_report.py reports
+# against; do not reintroduce it into the pipeline without reading that note.
 VISIBILITY_THRESHOLD = 0.4
 GAP_FILL_MAX_FRACTION_OF_FPS = 0.25
 SAVGOL_POLYORDER = 2
+# Depth is smoothed with a window this many times wider than X and Y, because
+# MediaPipe's depth jitter measures 3-8x its in-image jitter. Applied only on
+# the rendering/metrics path (filtering.smooth_depth), never to the series
+# segmentation reads -- see that function for why the two are separate.
+SAVGOL_DEPTH_WINDOW_SCALE = 2.5
+# The ground anchor is a translation applied to every joint, so its own noise
+# lands on the whole skeleton. Where the golfer stands varies far more slowly
+# than their limbs move, so it takes a much wider window than any joint does.
+GROUND_ANCHOR_WINDOW_SCALE = 4.0
 POOR_TRACKING_MAX_MISSING_FRACTION = 0.25
 
 # Section 7.6 — Stage 6 key-event detection.
@@ -137,7 +150,23 @@ MIN_BACKSWING_RISE_M = 0.20
 # address height": at impact the hands lead the ball slightly and monocular
 # depth adds its own offset, so the wrist often never quite returns to where
 # it started.
-IMPACT_RETURN_FRACTION_OF_RISE = 0.5
+#
+# Raised from 0.5 (a 0.10 m tolerance) after it rejected a real swing by 9 mm:
+# on a 60fps face-on clip the lead wrist descended to 0.109 m above address at
+# impact -- the correct frame, the clean low point between the backswing peak
+# and the follow-through peak -- and was discarded for missing 0.100 m. The
+# tolerance is absolute while swings are not: that clip spans 1.05 m of wrist
+# travel, so 0.10 m is a 10% budget for depth error and impact-position
+# variation, which is not enough.
+#
+# Swept against both clips in the repo's reach: the reference clip returns far
+# below address height and gives identical keyframes (49/306/409) at every
+# value from 0.5 to 0.9, so it exerts no pressure here at all; the rejected
+# clip needs > ~0.55 and then locks onto the same impact frame from 0.6 to 0.9.
+# 0.75 sits in the middle of that plateau. It must stay below 1.0, where the
+# back-down line would meet the MIN_BACKSWING_RISE_M line and any risen frame
+# would trivially count as returned.
+IMPACT_RETURN_FRACTION_OF_RISE = 0.75
 # Once the wrist is back down, the low point may sit a little further on. Search
 # this fraction of the clip past the crossing for it.
 IMPACT_LOW_POINT_SEARCH_FRACTION = 0.1

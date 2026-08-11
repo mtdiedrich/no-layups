@@ -10,3 +10,6 @@ dist/
 docs/spec/
 .claude/
 data/
+# Local debug renders from tools/overlay_pose.py
+*.mp4
+*.mov
