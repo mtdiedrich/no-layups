@@ -165,12 +165,30 @@ def compute_metrics(frames: dict[str, np.ndarray], keyframes: dict, handedness: 
     }
 
 
+def phase_of_frame(n: int, keyframes: dict) -> np.ndarray:
+    """Section 8.4: maps each of the n frame indices to its swing phase percent
+    (0=address, 40=top, 65=impact, 100=last frame), via linear interpolation
+    within each segment. Shared with compare.py's phase_to_frame (Section 8.4
+    last paragraph), which inverts this same mapping."""
+    address, top, impact = keyframes["address"], keyframes["top"], keyframes["impact"]
+    last = n - 1
+    return np.interp(
+        np.arange(n),
+        [address, top, impact, last],
+        [
+            config.PHASE_PERCENT_ADDRESS,
+            config.PHASE_PERCENT_TOP,
+            config.PHASE_PERCENT_IMPACT,
+            config.PHASE_PERCENT_LAST_FRAME,
+        ],
+    )
+
+
 def compute_trajectories(frames: dict[str, np.ndarray], keyframes: dict, handedness: str) -> dict:
     """Section 8.4: shoulder_turn_rel(t) and spine_tilt(t), resampled onto phase percent 0..100."""
-    address, top, impact = keyframes["address"], keyframes["top"], keyframes["impact"]
+    address = keyframes["address"]
     lead_s, trail_s = config.lead("shoulder", handedness), config.trail("shoulder", handedness)
     n = len(frames["nose"])
-    last = n - 1
 
     line_addr = None
     la, ta = _get(frames, lead_s, address), _get(frames, trail_s, address)
@@ -189,23 +207,14 @@ def compute_trajectories(frames: dict[str, np.ndarray], keyframes: dict, handedn
         if ms is not None and mh is not None:
             spine_tilt_series[t] = spine_tilt(ms, mh)
 
-    phase_of_frame = np.interp(
-        np.arange(n),
-        [address, top, impact, last],
-        [
-            config.PHASE_PERCENT_ADDRESS,
-            config.PHASE_PERCENT_TOP,
-            config.PHASE_PERCENT_IMPACT,
-            config.PHASE_PERCENT_LAST_FRAME,
-        ],
-    )
+    phase = phase_of_frame(n, keyframes)
     grid = np.arange(101)
 
     def resample(series):
         valid = ~np.isnan(series)
         if valid.sum() < 2:
             return [None] * 101
-        return [float(v) for v in np.interp(grid, phase_of_frame[valid], series[valid])]
+        return [float(v) for v in np.interp(grid, phase[valid], series[valid])]
 
     return {
         "phase_percent": grid.tolist(),

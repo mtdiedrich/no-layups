@@ -1,8 +1,8 @@
 # Bundled reference swing
 
 `reference.json` is the Section 9.1 reference artifact: a real swing in the
-`swing.json` format (Section 5.2), used by `compare.py` (M6) as the baseline
-every uploaded swing is rated against.
+`swing.json` format (Section 5.2), used by `compare.py` as the baseline every
+uploaded swing is rated against.
 
 ## Provenance
 

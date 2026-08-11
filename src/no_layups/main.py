@@ -6,8 +6,8 @@ import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
-from . import config, jobs, schemas
-from .pipeline import metrics
+from . import config, jobs, reference, schemas
+from .pipeline import compare, metrics
 
 app = FastAPI(title="No Layups")
 
@@ -81,17 +81,32 @@ def update_keyframes(swing_id: str, body: schemas.KeyframesUpdate) -> dict:
     frames_by_joint = _frames_to_arrays(swing["frames"], swing["joints"])
     handedness = swing["meta"]["handedness"]
 
-    # SPEC DEVIATION (Section 10): the endpoint table documents this response
-    # as "updated metrics + comparison". compare.py and GET /api/reference are
-    # M6 deliverables (Section 12) and don't exist yet, so this returns the
-    # updated swing.json only; M6 adds the comparison payload alongside it.
     swing["keyframes"] = keyframes
     swing["metrics"] = metrics.compute_metrics(frames_by_joint, keyframes, handedness)
     swing["trajectories"] = metrics.compute_trajectories(frames_by_joint, keyframes, handedness)
     swing["meta"]["keyframe_source"] = "manual"
 
     _swing_path(swing_id).write_text(json.dumps(swing))
-    return swing
+
+    # Section 10: response is "updated metrics + comparison" — the persisted
+    # file stays exactly the Section 5.2 shape; comparison is embedded only
+    # in this response so the keyframe editor can refresh in one round trip.
+    response = dict(swing)
+    response["comparison"] = compare.build_comparison(swing, reference.load())
+    return response
+
+
+@app.get("/api/reference")
+def get_reference() -> dict:
+    return reference.load()
+
+
+@app.get("/api/swings/{swing_id}/comparison")
+def get_comparison(swing_id: str) -> dict:
+    swing = _load_swing(swing_id)
+    if swing.get("metrics") is None:
+        raise HTTPException(404, "comparison unavailable: keyframes not yet set")
+    return compare.build_comparison(swing, reference.load())
 
 
 # Static frontend (Section 11) must be mounted last: Starlette matches routes

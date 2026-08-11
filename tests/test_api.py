@@ -148,11 +148,14 @@ def test_keyframes_valid_update_recomputes_metrics(client, monkeypatch):
     assert body["meta"]["keyframe_source"] == "manual"
     assert body["metrics"] is not None
     assert body["trajectories"] is not None
+    assert len(body["comparison"]["metrics"]) == 8
 
-    # Persisted, not just returned.
+    # Persisted file matches the Section 5.2 shape exactly -- "comparison"
+    # is a Section 5.3 concept and must not leak into swing.json.
     reloaded = client.get(f"/api/swings/{job_id}").json()
     assert reloaded["keyframes"] == {"address": 1, "top": 4, "impact": 7}
     assert reloaded["meta"]["keyframe_source"] == "manual"
+    assert "comparison" not in reloaded
 
 
 def test_pipeline_error_marks_job_error_with_code(client, monkeypatch):
@@ -164,3 +167,33 @@ def test_pipeline_error_marks_job_error_with_code(client, monkeypatch):
     assert job["status"] == "error"
     assert job["error"]["code"] == "too_long"
     assert job["swing_id"] is None
+
+
+def test_reference_endpoint_returns_bundled_reference(client):
+    res = client.get("/api/reference")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["keyframes"] is not None
+    assert body["metrics"] is not None
+    assert len(body["joints"]) == 13
+
+
+def test_comparison_404_when_swing_has_no_keyframes_yet(client, monkeypatch):
+    monkeypatch.setattr(jobs_module, "run_pipeline", _stub_success)
+    job_id = _upload_and_wait_done(client)  # STUB_SWING ships with metrics: None
+
+    assert client.get(f"/api/swings/{job_id}/comparison").status_code == 404
+
+
+def test_comparison_available_after_keyframes_are_set(client, monkeypatch):
+    monkeypatch.setattr(jobs_module, "run_pipeline", _stub_success)
+    job_id = _upload_and_wait_done(client)
+    client.post(f"/api/swings/{job_id}/keyframes", json={"address": 1, "top": 4, "impact": 7})
+
+    res = client.get(f"/api/swings/{job_id}/comparison")
+    assert res.status_code == 200
+    comparison = res.json()
+    assert len(comparison["metrics"]) == 8
+    assert set(comparison["trajectories"]["user"].keys()) == {"shoulder_turn", "spine_tilt"}
+    assert len(comparison["phase_to_frame"]["user"]) == 101
+    assert len(comparison["phase_to_frame"]["reference"]) == 101
