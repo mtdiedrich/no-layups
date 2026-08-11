@@ -79,30 +79,18 @@ def compute_metrics(frames: dict[str, np.ndarray], keyframes: dict, handedness: 
         mh = _mid(_get(frames, "left_hip", idx), _get(frames, "right_hip", idx))
         return None if ms is None or mh is None else spine_tilt(ms, mh)
 
-    # SPEC DEVIATION (Section 8.2): spine_tilt_address is reported as null, not
-    # as a number. Section 6.1 defines canonical +Y *as* normalize(mid(shoulders)
-    # - mid(hips)) at address, so in canonical space the address trunk vector is
-    # exactly the up axis and Section 8.2's atan2(|t.x|, t.y) is identically 0.0
-    # for every clip that has ever been or will ever be processed -- measured on
-    # the reference clip, the address trunk is [-0.000000, 0.483705, 0.000000].
+    # spine_tilt_address was previously forced to null here. Under the spec's
+    # Section 6.1 frame it was degenerate by construction: canonical +Y was
+    # defined AS the address trunk vector, so Section 8.2's atan2(|t.x|, t.y)
+    # returned exactly 0.0 for every clip (measured: the address trunk was
+    # [-0.000000, 0.483705, 0.000000]). That made it a permanent green rating
+    # on a quantity nobody had measured, so reporting nothing was honest.
     #
-    # Reporting 0.0 is worse than reporting nothing: Section 9.3 rates this
-    # metric at |delta| <= 3 deg for "good", and since the reference is anchored
-    # the same way its address tilt is also exactly 0.0, so the delta is
-    # identically 0 and every golfer scores a permanent green dot on a quantity
-    # that was never measured. Absolute spine tilt is simply not recoverable
-    # from canonical coordinates; it would need a gravity vector, and Section 15
-    # pitfall 9 explicitly warns against trusting MediaPipe's axes to supply one.
-    #
-    # null is an already-supported state: Section 8 says a metric whose inputs
-    # are unavailable is null and its rating is omitted from the comparison, so
-    # this propagates correctly through compare.py and the Section 11.5 metrics
-    # panel without touching the Section 5.2 schema.
-    #
-    # spine_tilt_impact is kept and is genuinely informative -- in canonical
-    # space it reads as the change in trunk lean between address and impact,
-    # which is the coachable quantity (secondary tilt) rather than an absolute.
-    spine_tilt_address = None
+    # canonical.transform now anchors +Y to world up rather than to the spine
+    # (see its SPEC DEVIATION note), which supplies exactly the gravity vector
+    # this metric was missing. The address trunk is no longer the up axis, the
+    # formula is no longer degenerate, and the metric is restored.
+    spine_tilt_address = spine_tilt_at(address)
 
     ls_top, le_top, lw_top = (
         _get(frames, lead("shoulder"), top),
@@ -165,12 +153,30 @@ def compute_metrics(frames: dict[str, np.ndarray], keyframes: dict, handedness: 
     }
 
 
+def phase_of_frame(n: int, keyframes: dict) -> np.ndarray:
+    """Section 8.4: maps each of the n frame indices to its swing phase percent
+    (0=address, 40=top, 65=impact, 100=last frame), via linear interpolation
+    within each segment. Shared with compare.py's phase_to_frame (Section 8.4
+    last paragraph), which inverts this same mapping."""
+    address, top, impact = keyframes["address"], keyframes["top"], keyframes["impact"]
+    last = n - 1
+    return np.interp(
+        np.arange(n),
+        [address, top, impact, last],
+        [
+            config.PHASE_PERCENT_ADDRESS,
+            config.PHASE_PERCENT_TOP,
+            config.PHASE_PERCENT_IMPACT,
+            config.PHASE_PERCENT_LAST_FRAME,
+        ],
+    )
+
+
 def compute_trajectories(frames: dict[str, np.ndarray], keyframes: dict, handedness: str) -> dict:
     """Section 8.4: shoulder_turn_rel(t) and spine_tilt(t), resampled onto phase percent 0..100."""
-    address, top, impact = keyframes["address"], keyframes["top"], keyframes["impact"]
+    address = keyframes["address"]
     lead_s, trail_s = config.lead("shoulder", handedness), config.trail("shoulder", handedness)
     n = len(frames["nose"])
-    last = n - 1
 
     line_addr = None
     la, ta = _get(frames, lead_s, address), _get(frames, trail_s, address)
@@ -189,23 +195,14 @@ def compute_trajectories(frames: dict[str, np.ndarray], keyframes: dict, handedn
         if ms is not None and mh is not None:
             spine_tilt_series[t] = spine_tilt(ms, mh)
 
-    phase_of_frame = np.interp(
-        np.arange(n),
-        [address, top, impact, last],
-        [
-            config.PHASE_PERCENT_ADDRESS,
-            config.PHASE_PERCENT_TOP,
-            config.PHASE_PERCENT_IMPACT,
-            config.PHASE_PERCENT_LAST_FRAME,
-        ],
-    )
+    phase = phase_of_frame(n, keyframes)
     grid = np.arange(101)
 
     def resample(series):
         valid = ~np.isnan(series)
         if valid.sum() < 2:
             return [None] * 101
-        return [float(v) for v in np.interp(grid, phase_of_frame[valid], series[valid])]
+        return [float(v) for v in np.interp(grid, phase[valid], series[valid])]
 
     return {
         "phase_percent": grid.tolist(),

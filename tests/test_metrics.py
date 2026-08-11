@@ -85,17 +85,37 @@ def test_compute_metrics_x_factor_and_plausible_values():
     assert result["head_sway_top"]["unit"] == "cm"
 
 
-def test_spine_tilt_address_is_null_not_zero():
-    """Canonical +Y is defined as the address trunk vector (Section 6.1), so an
-    absolute address spine tilt is identically 0 and therefore unmeasurable.
-    Reporting null keeps Section 9.3 from scoring every golfer a permanent
-    'good' on a quantity that was never measured."""
+def test_spine_tilt_address_is_measured_not_nulled():
+    """This metric used to be forced to null. Under the spec's Section 6.1
+    frame canonical +Y WAS the address trunk vector, so Section 8.2's formula
+    returned exactly 0.0 for every clip and reporting nothing was the honest
+    choice. canonical.transform now anchors +Y to world up, so the metric is a
+    real measurement again.
+
+    This fixture's trunk is vertical, so 0.0 is the correct answer here rather
+    than a degeneracy -- test_spine_tilt_address_tracks_actual_lean shows it
+    moves when the trunk does."""
     frames = _address_top_impact_frames()
     result = compute_metrics(frames, {"address": 0, "top": 1, "impact": 2}, handedness="right")
 
-    assert result["spine_tilt_address"] is None
-    assert "spine_tilt_address" in result  # key stays: Section 5.2 schema intact
-    assert result["spine_tilt_impact"] is not None  # relative tilt is still real
+    assert result["spine_tilt_address"] is not None
+    assert result["spine_tilt_address"]["value"] == pytest.approx(0.0, abs=1e-6)
+    assert result["spine_tilt_impact"] is not None
+
+
+def test_spine_tilt_address_tracks_actual_lean():
+    """Section 8.2: tilt = atan2(|t.x|, t.y) on the trunk vector, i.e. lateral
+    lean in the frontal plane. Tilt the shoulders 20 degrees along +X over the
+    hips and the metric must report 20 degrees."""
+    frames = _address_top_impact_frames()
+    mid_hip_y = (frames["left_hip"][0][1] + frames["right_hip"][0][1]) / 2
+    mid_shoulder_y = (frames["left_shoulder"][0][1] + frames["right_shoulder"][0][1]) / 2
+    offset = (mid_shoulder_y - mid_hip_y) * math.tan(math.radians(20.0))
+    for joint in ("left_shoulder", "right_shoulder"):
+        frames[joint][0][0] += offset
+
+    result = compute_metrics(frames, {"address": 0, "top": 1, "impact": 2}, handedness="right")
+    assert result["spine_tilt_address"]["value"] == pytest.approx(20.0, abs=1e-6)
 
 
 def test_head_sway_ignores_the_depth_axis():
