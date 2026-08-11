@@ -30,15 +30,20 @@ fully populated instead of `keyframes: null`.
 
 ## Spec deviations (all found against real footage, all documented in code)
 
-1. **Detection order — top before impact.** The spec finds impact (step 3)
-   then bounds the top search by it (step 4). Top is the more robust of the
-   two (a clear height maximum), so it is found first and used to bound
-   impact. This also matches the physical order.
+1. **Detection order — spec order kept (impact bounds top).** An earlier
+   revision inverted Section 7.6 steps 3/4, finding top as a global height
+   maximum and searching impact after it. That fails on any clip running
+   through to a full finish: the hands end up HIGHER than at the top of the
+   backswing (+0.888 m against +0.719 m on the reference clip), so "top" lands
+   in the follow-through and drags impact after it. Impact is found first and
+   bounds the top search to `[address + 5, impact - 3]`, exactly as spec'd.
 2. **Impact by height, not by speed.** The spec takes the lead-wrist speed
-   peak inside a fixed `[0.4N, 0.9N]` slice. On the reference clip impact
-   falls at ~98% of the clip, outside that window entirely, and the speed peak
-   is easily won by tracking jitter during the blurred part of the swing.
-   Impact is instead the lead wrist's height minimum after the top.
+   peak inside a fixed `[0.4N, 0.9N]` slice. The fixed slice assumes the swing
+   sits in a particular part of the clip, and the speed peak is easily won by
+   tracking jitter during the blurred part of the swing. Impact is instead the
+   low point of the **first** descent back to address level after a genuine
+   backswing rise — "first descent" rather than "lowest overall" is what
+   survives a full follow-through.
 3. **Height sign.** Section 7.6 step 4 takes `argmax` of raw wrist Y, assuming
    Y grows upward. MediaPipe world landmarks grow *downward*, so Y is negated
    in `wrist_height()`. Segmentation is Pass A of the 7.5 two-pass ordering,
@@ -78,10 +83,19 @@ fully populated instead of `keyframes: null`.
    reads "attention" for everyone. Canonical +X is body-derived (the address
    hip line, roughly the target line), so it is both the direction golf sway
    means and stable across camera angles. Reference value drops 39.4 -> 12.5 cm.
-8. **Quality gate scope.** Section 7.4 step 3 is applied over `address..impact`
-   by the pipeline once keyframes are known, not over the whole clip inside
-   `filtering.process`. Tracking loss during the follow-through is very common
-   and says nothing about whether the swing itself was measurable.
+8. **Quality gate scope and severity.** Section 7.4 step 3 is applied over
+   `address..impact` once keyframes are known, not over the whole clip inside
+   `filtering.process` — follow-through tracking loss says nothing about
+   whether the swing was measurable. It is also fatal only for the joints
+   Section 8 actually reads; the rest downgrade to a `partial_tracking`
+   warning. The spec contradicts itself otherwise: Section 13.2 requires
+   end-to-end acceptance on a down-the-line clip, but that view necessarily
+   hides one arm behind the torso, which an any-joint gate rejects. On the
+   reference clip the trail elbow is missing 33.5% of the swing while every
+   metric-feeding joint is missing 0%. Gap-filling those dropouts was
+   considered and rejected: they run 69/21/31 frames through the middle of the
+   backswing where the elbow moves fast, so interpolation would fabricate its
+   path rather than recover it.
 
 ## Files to change
 

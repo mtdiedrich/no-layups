@@ -60,9 +60,13 @@ def run_pipeline(video_path: Path, handedness: str, on_progress: Callable[[str],
     # Section 7.4 step 3: the tracking-quality gate covers address..impact,
     # falling back to the whole clip when segmentation could not place them.
     if keyframes is not None:
-        filtering.check_quality(smoothed, keyframes["address"], keyframes["impact"])
+        partial = filtering.check_quality(
+            smoothed, keyframes["address"], keyframes["impact"], handedness
+        )
     else:
-        filtering.check_quality(smoothed, 0, raw.frame_count - 1)
+        partial = filtering.check_quality(smoothed, 0, raw.frame_count - 1, handedness)
+    if partial:
+        warnings.append("partial_tracking")
 
     canonical_frames = canonical.transform(smoothed, address_idx, handedness)
 

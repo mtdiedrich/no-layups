@@ -108,15 +108,56 @@ def detect_address(wrist_xyz: np.ndarray, fps: float) -> int:
     return max(0, takeaway_start - round(config.ADDRESS_LOOKBACK_S * fps))
 
 
-def detect_top(height: np.ndarray, address: int) -> int:
+def detect_impact(height: np.ndarray, address: int, address_height: float) -> int:
+    """Impact: the lead wrist's low point on its FIRST descent back to address
+    level after a genuine backswing rise -- the hands returning to the ball.
+
+    SPEC DEVIATION (Section 7.6 step 3): the spec locates impact as the
+    lead-wrist speed peak within a fixed [0.4N, 0.9N] slice of the clip. Two
+    problems showed up on real footage: the fixed slice assumes the swing sits
+    in a particular part of the clip (impact fell at 98% of one reference
+    clip, outside the window), and the speed peak is easily won by tracking
+    jitter during the fast blurred part of the backswing rather than by impact
+    itself. Height is a geometric property of the swing -- independent of where
+    the swing sits in the clip, of the playback rate, and of speed noise.
+
+    "First descent" rather than "lowest point overall" is what makes this
+    survive a full follow-through: see IMPACT_RETURN_FRACTION_OF_RISE.
+    """
+    n = len(height)
+    risen = np.flatnonzero(height > address_height + config.MIN_BACKSWING_RISE_M)
+    risen = risen[risen > address]
+    if len(risen) == 0:
+        raise PipelineError("no_full_swing", "no backswing detected: the lead wrist never rises")
+    rise_start = int(risen[0])
+
+    back_down = address_height + config.IMPACT_RETURN_FRACTION_OF_RISE * config.MIN_BACKSWING_RISE_M
+    returned = np.flatnonzero(height <= back_down)
+    returned = returned[returned > rise_start]
+    if len(returned) == 0:
+        raise PipelineError(
+            "no_full_swing", "the lead wrist never comes back down after the backswing"
+        )
+    crossing = int(returned[0])
+
+    end = min(n - 1, crossing + round(config.IMPACT_LOW_POINT_SEARCH_FRACTION * n))
+    window = height[rise_start : end + 1]
+    local_idx = _nan_safe(window, np.nanargmin)
+    if local_idx is None:
+        raise PipelineError("no_full_swing", "impact window has no usable tracking data")
+    return rise_start + local_idx
+
+
+def detect_top(height: np.ndarray, address: int, impact: int) -> int:
     """Section 7.6 step 4: the lead wrist is highest at the top of the backswing.
 
-    Searched over [address + 5, N - 1 - 3] rather than the spec's
-    [address + 5, impact - 3]: see detect_keyframes for why top is now found
-    before impact instead of after it.
+    Searched over [address + 5, impact - 3] exactly as the spec says. Bounding
+    the search by impact is what keeps the follow-through out of it -- on a clip
+    that runs to a full finish the hands end up higher than they ever were at
+    the top, so an unbounded argmax returns the finish.
     """
     start = address + config.TOP_WINDOW_ADDRESS_MARGIN
-    end = len(height) - 1 - config.IMPACT_MIN_FRAMES_AFTER_TOP
+    end = impact - config.TOP_WINDOW_IMPACT_MARGIN
     window = height[start : end + 1]
     if len(window) < config.MIN_ARGMAX_WINDOW_FRAMES:
         raise PipelineError("no_full_swing", "top-of-backswing search window is too small")
@@ -126,50 +167,26 @@ def detect_top(height: np.ndarray, address: int) -> int:
     return start + local_idx
 
 
-def detect_impact(height: np.ndarray, top: int) -> int:
-    """Impact is where the lead wrist comes back down to its lowest point
-    after the top -- the hands returning to the ball.
-
-    SPEC DEVIATION (Section 7.6 step 3): the spec locates impact as the
-    lead-wrist speed peak within a fixed [0.4N, 0.9N] slice of the clip. Two
-    problems showed up on real footage: the fixed slice assumes the swing sits
-    in a particular part of the clip (impact fell at 96% of the reference
-    clip, outside the window), and the speed peak is easily won by tracking
-    jitter during the fast blurred part of the backswing rather than by
-    impact itself. Wrist height returning to its minimum is a geometric
-    property of the swing -- independent of where the swing sits in the clip,
-    of the playback rate, and of frame-to-frame speed noise.
-    """
-    start = top + config.IMPACT_MIN_FRAMES_AFTER_TOP
-    window = height[start:]
-    if len(window) < config.MIN_ARGMAX_WINDOW_FRAMES:
-        raise PipelineError("no_full_swing", "impact search window is too small")
-    local_idx = _nan_safe(window, np.nanargmin)
-    if local_idx is None:
-        raise PipelineError("no_full_swing", "impact window has no usable tracking data")
-    return start + local_idx
-
-
 def detect_keyframes(wrist_xyz: np.ndarray, fps: float) -> dict:
     """Section 7.6, full: address, top, impact. Raises PipelineError('no_full_swing', ...).
 
-    Ordering deviates from the spec, which finds impact (step 3) before top
-    (step 4) and uses impact to bound the top search. Top is the more robust
-    of the two -- a clear height maximum -- so it is found first and used to
-    bound impact, which removes the spec's dependence on a fixed-fraction
-    search window. Physically the order is also the true one: top precedes
-    impact.
+    Keeps the spec's step 3 -> step 4 ordering: impact is located first and
+    bounds the top search. An earlier revision inverted this, finding top as a
+    global height maximum and searching impact after it; that fails on any clip
+    running through to a full finish, where the hands end up higher than at the
+    top of the backswing and the "top" lands in the follow-through.
     """
-    n = len(wrist_xyz)
     height = wrist_height(wrist_xyz)
 
     address = detect_address(wrist_xyz, fps)
-    top = detect_top(height, address)
-    impact = detect_impact(height, top)
 
     address_height = np.nanmedian(height[max(0, address - 2) : address + 3])
     if np.isnan(address_height):
         raise PipelineError("no_full_swing", "no usable lead-wrist tracking at address")
+
+    impact = detect_impact(height, address, float(address_height))
+    top = detect_top(height, address, impact)
+
     if height[top] - address_height < config.MIN_BACKSWING_RISE_M:
         raise PipelineError("no_full_swing", "no backswing detected: the lead wrist never rises")
 

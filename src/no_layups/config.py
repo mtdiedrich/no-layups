@@ -126,6 +126,23 @@ IMPACT_MIN_FRAMES_AFTER_TOP = 3
 # 1.6 m/s). Distance in metres is invariant to playback rate, so the gate is
 # instead "did the lead wrist actually rise into a backswing?".
 MIN_BACKSWING_RISE_M = 0.20
+# Impact is located as the FIRST return to address level after a genuine
+# backswing rise, never as a global extremum over the rest of the clip. On any
+# clip that runs through to a full finish, the hands finish HIGHER than they
+# ever were at the top of the backswing -- measured on the reference clip, the
+# finish peaks at +0.888 m against the backswing top's +0.719 m -- so a global
+# argmax lands on the finish and drags impact after it. "First descent" is the
+# only anchor that survives a full follow-through.
+#
+# The wrist counts as back down once it falls to within this fraction of
+# MIN_BACKSWING_RISE_M of the address height. It is deliberately not "exactly
+# address height": at impact the hands lead the ball slightly and monocular
+# depth adds its own offset, so the wrist often never quite returns to where
+# it started.
+IMPACT_RETURN_FRACTION_OF_RISE = 0.5
+# Once the wrist is back down, the low point may sit a little further on. Search
+# this fraction of the clip past the crossing for it.
+IMPACT_LOW_POINT_SEARCH_FRACTION = 0.1
 
 # Section 8.4 — phase-percent anchors for trajectory normalization.
 PHASE_PERCENT_ADDRESS = 0

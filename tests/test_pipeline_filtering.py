@@ -3,7 +3,12 @@ import pytest
 
 from no_layups import config
 from no_layups.pipeline.errors import PipelineError
-from no_layups.pipeline.filtering import _savgol_window, check_quality, process
+from no_layups.pipeline.filtering import (
+    _savgol_window,
+    check_quality,
+    metric_critical_joints,
+    process,
+)
 from no_layups.pipeline.pose import PoseSeries
 
 FPS = 30.0
@@ -55,22 +60,43 @@ def test_process_does_not_raise_on_poor_tracking():
     process(raw, FPS)  # must not raise
 
 
-def test_check_quality_raises_past_25_percent_missing():
+def test_check_quality_raises_on_a_metric_critical_joint():
+    """left_wrist is the lead wrist for a right-handed golfer, and Section 8
+    reads it for lead_elbow_top -- losing it makes the swing unmeasurable."""
     raw = _baseline_raw()
-    _drop_visibility(raw, "left_ankle", start=0, length=20)  # 33% of 60 frames
+    _drop_visibility(raw, "left_wrist", start=0, length=20)  # 33% of 60 frames
     out = process(raw, FPS)
     with pytest.raises(PipelineError) as exc:
-        check_quality(out, 0, N - 1)
+        check_quality(out, 0, N - 1, "right")
     assert exc.value.code == "poor_tracking"
-    assert "left_ankle" in exc.value.message
+    assert "left_wrist" in exc.value.message
+
+
+def test_check_quality_only_warns_on_a_render_only_joint():
+    """right_elbow is the trail elbow for a right-handed golfer and feeds no
+    metric, so losing it degrades the skeleton but not the analysis. A
+    down-the-line clip always hides one arm, and Section 13.2 requires that
+    view to pass end-to-end."""
+    raw = _baseline_raw()
+    _drop_visibility(raw, "right_elbow", start=0, length=20)  # 33% of 60 frames
+    out = process(raw, FPS)
+    assert check_quality(out, 0, N - 1, "right") == ["right_elbow"]
+
+
+def test_metric_critical_joints_follow_handedness():
+    right = set(metric_critical_joints("right"))
+    left = set(metric_critical_joints("left"))
+    assert "left_wrist" in right and "right_wrist" not in right
+    assert "right_wrist" in left and "left_wrist" not in left
+    assert {"nose", "left_shoulder", "right_shoulder", "left_hip", "right_hip"} <= right & left
 
 
 def test_check_quality_ignores_dropouts_outside_the_swing_span():
     """Tracking lost only during the follow-through must not fail the clip."""
     raw = _baseline_raw()
-    _drop_visibility(raw, "left_ankle", start=40, length=20)  # all after 'impact'
+    _drop_visibility(raw, "left_wrist", start=40, length=20)  # all after 'impact'
     out = process(raw, FPS)
-    check_quality(out, 0, 39)  # must not raise
+    assert check_quality(out, 0, 39, "right") == []  # must not raise
 
 
 def test_savgol_window_is_odd_and_clamped():
