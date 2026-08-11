@@ -116,8 +116,6 @@ ADDRESS_LOOKBACK_S = 0.4
 TOP_WINDOW_ADDRESS_MARGIN = 5
 TOP_WINDOW_IMPACT_MARGIN = 3
 MIN_ARGMAX_WINDOW_FRAMES = 4
-# Frames reserved after `top` so there is room to locate impact.
-IMPACT_MIN_FRAMES_AFTER_TOP = 3
 # SPEC DEVIATION (Section 7.6 step 3): the spec gates "did a swing happen?"
 # on lead-wrist speed exceeding an absolute 3.0 m/s. Speed in m/s is a
 # function of the playback timeline, so slow-motion footage -- extremely
