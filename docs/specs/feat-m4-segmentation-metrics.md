@@ -30,15 +30,20 @@ fully populated instead of `keyframes: null`.
 
 ## Spec deviations (all found against real footage, all documented in code)
 
-1. **Detection order — top before impact.** The spec finds impact (step 3)
-   then bounds the top search by it (step 4). Top is the more robust of the
-   two (a clear height maximum), so it is found first and used to bound
-   impact. This also matches the physical order.
+1. **Detection order — spec order kept (impact bounds top).** An earlier
+   revision inverted Section 7.6 steps 3/4, finding top as a global height
+   maximum and searching impact after it. That fails on any clip running
+   through to a full finish: the hands end up HIGHER than at the top of the
+   backswing (+0.888 m against +0.719 m on the reference clip), so "top" lands
+   in the follow-through and drags impact after it. Impact is found first and
+   bounds the top search to `[address + 5, impact - 3]`, exactly as spec'd.
 2. **Impact by height, not by speed.** The spec takes the lead-wrist speed
-   peak inside a fixed `[0.4N, 0.9N]` slice. On the reference clip impact
-   falls at ~98% of the clip, outside that window entirely, and the speed peak
-   is easily won by tracking jitter during the blurred part of the swing.
-   Impact is instead the lead wrist's height minimum after the top.
+   peak inside a fixed `[0.4N, 0.9N]` slice. The fixed slice assumes the swing
+   sits in a particular part of the clip, and the speed peak is easily won by
+   tracking jitter during the blurred part of the swing. Impact is instead the
+   low point of the **first** descent back to address level after a genuine
+   backswing rise — "first descent" rather than "lowest overall" is what
+   survives a full follow-through.
 3. **Height sign.** Section 7.6 step 4 takes `argmax` of raw wrist Y, assuming
    Y grows upward. MediaPipe world landmarks grow *downward*, so Y is negated
    in `wrist_height()`. Segmentation is Pass A of the 7.5 two-pass ordering,
@@ -53,7 +58,16 @@ fully populated instead of `keyframes: null`.
    trigger (0.4 m/s) becomes `min(0.4, 5% of the clip's own peak speed)`, so
    normal-speed footage keeps exactly the spec's behaviour while slow-motion
    footage scales down with it.
-5. **`spine_tilt_address` is null, not a number** (Section 8.2). Section 6.1
+5. **Takeaway needs net-displacement confirmation** (Section 7.6 step 1). The
+   lowered speed trigger from (4) buys sensitivity at the cost of specificity:
+   a golfer's address waggle peaks at 0.20 m/s on the reference clip — under
+   the spec's absolute 0.4, but well over 5% of that clip's 1.44 m/s peak — so
+   speed alone picked frame 1, about two seconds before the lead wrist left
+   address. A waggle oscillates and returns (net displacement ~0) where a
+   takeaway translates away and stays, so a candidate must also show net
+   displacement over a clip-relative window. This matters because the turn
+   metrics are differences measured against the address frame.
+6. **`spine_tilt_address` is null, not a number** (Section 8.2). Section 6.1
    defines canonical +Y *as* the address trunk vector, so Section 8.2's formula
    evaluates to exactly 0.0 at address for every clip. Since the reference is
    anchored identically its value is also 0.0, so a reported 0.0 would score
@@ -62,23 +76,34 @@ fully populated instead of `keyframes: null`.
    and leaves the Section 5.2 schema intact. `spine_tilt_impact` is kept — in
    canonical space it reads as tilt *relative to address*, which is the
    coachable quantity.
-6. **`head_sway_top` uses canonical X only** (Section 8.3). The spec's Z term
+7. **`head_sway_top` uses canonical X only** (Section 8.3). The spec's Z term
    is monocular depth: on the reference clip it contributed 37.9 cm of a 39.4
    cm total. Section 9.3 rates this metric on absolute thresholds rather than
    against the reference, so it gets no cancellation and a depth-inflated value
    reads "attention" for everyone. Canonical +X is body-derived (the address
    hip line, roughly the target line), so it is both the direction golf sway
-   means and stable across camera angles. Reference value drops 39.4 -> 10.7 cm.
-7. **Quality gate scope.** Section 7.4 step 3 is applied over `address..impact`
-   by the pipeline once keyframes are known, not over the whole clip inside
-   `filtering.process`. Tracking loss during the follow-through is very common
-   and says nothing about whether the swing itself was measurable.
+   means and stable across camera angles. Reference value drops 39.4 -> 12.5 cm.
+8. **Quality gate scope and severity.** Section 7.4 step 3 is applied over
+   `address..impact` once keyframes are known, not over the whole clip inside
+   `filtering.process` — follow-through tracking loss says nothing about
+   whether the swing was measurable. It is also fatal only for the joints
+   Section 8 actually reads; the rest downgrade to a `partial_tracking`
+   warning. The spec contradicts itself otherwise: Section 13.2 requires
+   end-to-end acceptance on a down-the-line clip, but that view necessarily
+   hides one arm behind the torso, which an any-joint gate rejects. On the
+   reference clip the trail elbow is missing 33.5% of the swing while every
+   metric-feeding joint is missing 0%. Gap-filling those dropouts was
+   considered and rejected: they run 69/21/31 frames through the middle of the
+   backswing where the elbow moves fast, so interpolation would fabricate its
+   path rather than recover it.
 
 ## Files to change
 
 - `src/no_layups/config.py` — Stage 6 steps 3-5 thresholds (top window
-  margins, minimum argmax window size) plus the two scale-invariant gates
-  (`MIN_BACKSWING_RISE_M`, `TAKEAWAY_SPEED_FRACTION_OF_PEAK`).
+  margins, minimum argmax window size) plus the scale-invariant gates
+  (`MIN_BACKSWING_RISE_M`, `TAKEAWAY_SPEED_FRACTION_OF_PEAK`) and the takeaway
+  confirmation pair (`TAKEAWAY_MIN_NET_DISPLACEMENT_FRACTION`,
+  `TAKEAWAY_CONFIRM_WINDOW_FRACTION`).
 - `src/no_layups/pipeline/filtering.py` — move the step-3 quality gate out of
   `process()` into `check_quality(smoothed, start, end)`; smooth a
   fully-filled copy so Savitzky-Golay cannot bleed NaN out of a long gap into
@@ -104,10 +129,20 @@ fully populated instead of `keyframes: null`.
 ## Test plan
 
 See Section 13.1's `test_segment.py`/`test_metrics.py` bullets, reproduced
-above. Plus a real-data check: rerun the CLI against the (already-trimmed)
-Rory clip from M2 and eyeball detected keyframes against the viewer, and
-confirm metric values fall in the plausible ranges from Section 13.2
-(shoulder turn 60-110°, lead elbow 150-180°).
+above. Plus a real-data check against `RORY.mov` (60 fps, passes Stage 1 with
+no preprocessing), eyeballing detected keyframes frame-by-frame against the
+video: address 38, top 330, impact 445, backswing:downswing 2.5:1, all
+confirmed correct.
+
+Section 13.2's plausible ranges (shoulder turn 60-110°, lead elbow 150-180°)
+are **not** met and cannot be with this input: monocular depth under-estimates
+torso rotation badly (shoulder turn reads 11.4° where truth is nearer 90°).
+`lead_elbow_top` reads 147.7° in 3D against 163° using image-plane axes only,
+which is the cleanest demonstration that the formulas are right and the depth
+channel is not. This is an M7/13.2 acceptance problem, not an M4 gate: Section
+12's M4 row asks only that the two test files pass and keyframes land within
+±5 frames of eyeballing it, which they do. Section 9.2's reference-relative
+rating is the designed mitigation — see `reference/README.md`.
 
 ## Out of scope
 

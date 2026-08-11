@@ -4,6 +4,7 @@ import pytest
 from no_layups import config
 from no_layups.pipeline.errors import PipelineError
 from no_layups.pipeline.segment import (
+    wrist_speed,
     detect_address,
     detect_keyframes,
     detect_takeaway_start,
@@ -90,6 +91,27 @@ def test_stationary_series_raises_no_full_swing():
     assert exc.value.code == "no_full_swing"
 
 
+def test_address_waggle_does_not_trigger_takeaway():
+    """A waggle oscillates and returns; a takeaway translates away and stays.
+    The lowered playback-invariant speed trigger fires on both, so net
+    displacement is what separates them. Regression test for the reference
+    clip picking frame 1, ~2 s before the lead wrist actually left address."""
+    fps = 30.0
+    wrist_xyz, truth = _build_wrist_path(fps)
+    # Superimpose an oscillating waggle across the whole address hold. Its peak
+    # speed sits above the relative trigger but its net displacement is ~0.
+    hold = truth["address"] + round(0.4 * fps)
+    t = np.arange(hold)
+    wrist_xyz[:hold, 0] += 0.01 * np.sin(2 * np.pi * t / 5.0)
+
+    v = wrist_speed(wrist_xyz, fps)
+    assert v[1:hold].max() > takeaway_speed_threshold(v), "waggle must beat the speed trigger"
+
+    detected = detect_keyframes(wrist_xyz, fps)
+    assert abs(detected["address"] - truth["address"]) <= 3
+    assert abs(detected["top"] - truth["top"]) <= 3
+
+
 def test_takeaway_threshold_never_exceeds_the_spec_absolute():
     """The relative term may only make takeaway detection more sensitive.
     Normal-speed footage must keep exactly the spec's 0.4 m/s behaviour."""
@@ -133,6 +155,30 @@ def test_slow_motion_swing_is_still_detected():
     assert detected["address"] < detected["top"] < detected["impact"]
     assert abs(detected["top"] - truth["top"] * 8) <= 8
     assert abs(detected["impact"] - truth["impact"] * 8) <= 8
+
+
+def test_finish_higher_than_the_top_does_not_steal_it():
+    """A clip that runs through to a full finish ends with the hands HIGHER
+    than they ever were at the top of the backswing. Regression test for the
+    global-argmax top, which returned the finish and dragged impact after it:
+    on the reference clip the finish peaked at +0.888 m against the backswing
+    top's +0.719 m, giving top=711 and impact=725 out of 873 frames."""
+    fps = 60.0
+    wrist_xyz, truth = _build_wrist_path(fps)
+    # Replace the short follow-through with a full finish that climbs past the top.
+    n = len(wrist_xyz)
+    finish_from = truth["impact"] + 2
+    top_height = -wrist_xyz[truth["top"], 1]
+    finish = np.linspace(-0.10, top_height + 0.25, n - finish_from)
+    wrist_xyz[finish_from:, 1] = -finish
+
+    height = -wrist_xyz[:, 1]
+    assert height[finish_from:].max() > height[truth["top"]], "fixture must have a higher finish"
+
+    detected = detect_keyframes(wrist_xyz, fps)
+    assert abs(detected["top"] - truth["top"]) <= 3, f"top landed in the finish: {detected}"
+    assert abs(detected["impact"] - truth["impact"]) <= 3
+    assert detected["address"] < detected["top"] < detected["impact"]
 
 
 def test_nan_gap_after_impact_is_ignored():

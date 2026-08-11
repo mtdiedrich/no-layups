@@ -48,13 +48,15 @@ uv run pytest
 ## Known accuracy limits
 
 - 3D is inferred from a single 2D camera view and is approximate. Absolute
-  positions are unreliable, and the depth axis is by far the weakest channel —
-  measured on the bundled reference clip, MediaPipe's frame-to-frame depth
-  jitter runs 2-3x its in-image jitter. Angles that lie in the image plane are
-  trustworthy; **rotations about the vertical axis are not**. On a face-on
-  clip the shoulders turn edge-on to the camera exactly at the top of the
-  backswing, which is where the estimate is weakest: the reference swing
-  measures ~12° of shoulder turn where the true value is nearer 90°.
+  positions are unreliable, and the depth axis is the weakest channel —
+  MediaPipe's frame-to-frame depth jitter runs 2-3x its in-image jitter.
+- **Camera angle matters more than resolution.** Turn metrics are read from
+  the depth axis, so they depend on the view having something to see. On a
+  face-on clip the shoulders are edge-on to the camera exactly at the top of
+  the backswing — the worst case — and shoulder turn reads ~12° where the
+  truth is nearer 90°. The same swing from an angled view reads ~55°. Shoot
+  from a view that shows the turn, and treat turn metrics from a dead face-on
+  clip with suspicion.
 - Because of that, the 8 metrics are rated against a bundled **reference swing
   processed through the same pipeline** (Section 9.2), so a systematic depth
   bias largely cancels. Compare the deltas, not the absolute numbers. A clip

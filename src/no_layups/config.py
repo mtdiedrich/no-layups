@@ -97,12 +97,25 @@ TAKEAWAY_CONSECUTIVE_FRAMES = 3
 # exactly the spec's 0.4 m/s behaviour -- the relative term can only ever make
 # detection more sensitive, never less.
 TAKEAWAY_SPEED_FRACTION_OF_PEAK = 0.05
+# Lowering the speed trigger above buys sensitivity on slow-motion footage at
+# the cost of specificity: a golfer's address waggle is slow but not still, and
+# on the reference clip it peaks at 0.20 m/s -- under the spec's absolute 0.4
+# but well over 5% of that clip's 1.44 m/s peak. Speed alone cannot separate
+# the two, so a candidate must also be confirmed by NET displacement: a waggle
+# oscillates and returns (net ~ 0), a real takeaway translates away and stays.
+# The lead wrist must therefore travel at least this fraction of its own total
+# range over the confirmation window before a candidate is accepted.
+TAKEAWAY_MIN_NET_DISPLACEMENT_FRACTION = 0.05
+# The confirmation window is a fraction of clip length, not a fixed number of
+# seconds. A slow-motion clip of the same swing has proportionally more frames,
+# so a clip-relative window covers the same portion of the real motion at any
+# playback rate, while a fixed 0.5 s window would shrink to nothing at 8x slow
+# motion and reject the genuine takeaway along with the waggle.
+TAKEAWAY_CONFIRM_WINDOW_FRACTION = 0.05
 ADDRESS_LOOKBACK_S = 0.4
 TOP_WINDOW_ADDRESS_MARGIN = 5
 TOP_WINDOW_IMPACT_MARGIN = 3
 MIN_ARGMAX_WINDOW_FRAMES = 4
-# Frames reserved after `top` so there is room to locate impact.
-IMPACT_MIN_FRAMES_AFTER_TOP = 3
 # SPEC DEVIATION (Section 7.6 step 3): the spec gates "did a swing happen?"
 # on lead-wrist speed exceeding an absolute 3.0 m/s. Speed in m/s is a
 # function of the playback timeline, so slow-motion footage -- extremely
@@ -111,6 +124,23 @@ IMPACT_MIN_FRAMES_AFTER_TOP = 3
 # 1.6 m/s). Distance in metres is invariant to playback rate, so the gate is
 # instead "did the lead wrist actually rise into a backswing?".
 MIN_BACKSWING_RISE_M = 0.20
+# Impact is located as the FIRST return to address level after a genuine
+# backswing rise, never as a global extremum over the rest of the clip. On any
+# clip that runs through to a full finish, the hands finish HIGHER than they
+# ever were at the top of the backswing -- measured on the reference clip, the
+# finish peaks at +0.888 m against the backswing top's +0.719 m -- so a global
+# argmax lands on the finish and drags impact after it. "First descent" is the
+# only anchor that survives a full follow-through.
+#
+# The wrist counts as back down once it falls to within this fraction of
+# MIN_BACKSWING_RISE_M of the address height. It is deliberately not "exactly
+# address height": at impact the hands lead the ball slightly and monocular
+# depth adds its own offset, so the wrist often never quite returns to where
+# it started.
+IMPACT_RETURN_FRACTION_OF_RISE = 0.5
+# Once the wrist is back down, the low point may sit a little further on. Search
+# this fraction of the clip past the crossing for it.
+IMPACT_LOW_POINT_SEARCH_FRACTION = 0.1
 
 # Section 8.4 — phase-percent anchors for trajectory normalization.
 PHASE_PERCENT_ADDRESS = 0
