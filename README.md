@@ -9,6 +9,24 @@ detects address/top-of-backswing/impact, renders an interactive 3D
 stick-figure viewer, and compares 8 swing metrics against a bundled reference
 swing.
 
+## Shoot face-on
+
+**V1 supports face-on footage only** — camera square to the golfer, so the
+stance runs left-to-right across the frame. Down-the-line footage (camera
+behind the golfer, looking along the target line) is out of scope and will
+produce wrong numbers rather than an error, because the metrics assume the
+swing is being viewed from the front.
+
+This is not just a preference. The 8 metrics are rated as deltas against a
+bundled reference swing, and that cancellation only works when the upload and
+the reference carry the *same* systematic depth bias — which means the same
+camera view. The bundled reference is face-on (measured stance azimuth 8.5 deg
+off the image plane), so face-on uploads cancel against it and other views do
+not. Supporting a second view would mean bundling a second reference.
+
+Also keep the camera still. Handheld footage still processes, but appends a
+`camera_moving` warning.
+
 See `docs/spec/No_Layups_V1_Specification.pdf` for the full technical
 specification this project implements.
 
@@ -48,22 +66,24 @@ uv run pytest
 ## Known accuracy limits
 
 - 3D is inferred from a single 2D camera view and is approximate. Absolute
-  positions are unreliable, and the depth axis is the weakest channel —
-  MediaPipe's frame-to-frame depth jitter runs 2-3x its in-image jitter.
-- **Camera angle matters more than resolution.** Turn metrics are read from
-  the depth axis, so they depend on the view having something to see. On a
-  face-on clip the shoulders are edge-on to the camera exactly at the top of
-  the backswing — the worst case — and shoulder turn reads ~12° where the
-  truth is nearer 90°. The same swing from an angled view reads ~55°. Shoot
-  from a view that shows the turn, and treat turn metrics from a dead face-on
-  clip with suspicion.
-- Because of that, the 8 metrics are rated against a bundled **reference swing
-  processed through the same pipeline** (Section 9.2), so a systematic depth
-  bias largely cancels. Compare the deltas, not the absolute numbers. A clip
-  shot from a very different angle than the reference cancels less cleanly.
-- `spine_tilt_address` is reported as `null` by design. The canonical frame
-  defines "up" as the address trunk vector, so an absolute spine tilt at
-  address is identically zero and cannot be measured; see `metrics.py`.
+  positions are unreliable, and depth is by far the weakest channel —
+  MediaPipe's frame-to-frame depth jitter measures 3-8x its in-image jitter.
+- **MediaPipe's 3D output is not rigid.** This is the hard limit on everything
+  below. Across frames of a single clip the upper arm's length varies by 92%
+  of its own mean and the shoulder width by 79%, while the 2D image landmarks
+  the 3D is derived from stay accurate. A body whose bones change length
+  cannot yield trustworthy joint angles either, so treat *absolute* metric
+  values as indicative only. It is why shoulder turn reads ~60° where the truth
+  is nearer 90°, and why the rendered head sits well in front of the shoulders.
+- Because of that, the 8 metrics are rated as **deltas against a bundled
+  reference swing processed through the same pipeline** (Section 9.2), so the
+  systematic part of the bias largely cancels. Compare the deltas, not the
+  absolute numbers — and shoot face-on, or the cancellation does not hold (see
+  above).
+- Turn metrics are read from the depth axis, so a face-on view measures them
+  in the worst case: the shoulders are edge-on to the camera exactly at the
+  top of the backswing. This is a known cost of the face-on-only scope, and
+  the reason turn values read low in absolute terms.
 - The skeleton may appear mirrored depending on which side the camera is on;
   the viewer has a mirror toggle.
 - Key-event detection (address / top of backswing / impact) is heuristic and
