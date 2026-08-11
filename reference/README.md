@@ -6,9 +6,19 @@ uploaded swing is rated against.
 
 ## Provenance
 
-Rory McIlroy driver swing, slow motion, static camera, angled view.
+Rory McIlroy driver swing, slow motion, static camera, **face-on**.
 Source: `RORY.mov` — 1440x1080, 60 fps, 873 frames, 14.55 s, h264.
 (Watermarked "Video copyright Michael Field".)
+
+This file previously described the clip as an "angled view". Measured, it is
+not: the stance sits 8.5 deg off the image plane over address..top, against
+3.5 deg for another clip shot elsewhere — both face-on by any useful
+definition, and nowhere near the ~90 deg a down-the-line view would give.
+That matters because V1 is face-on only (see the root README), and Section
+9.2's delta rating only cancels MediaPipe's bias when the upload and the
+reference share a camera view. This reference is the right kind of clip for
+that scope. The correction is recorded rather than quietly edited because the
+"angled view" claim carried an argument with it — see the section below.
 
 It passes Stage 1 validation as-is, so there is no preprocessing step:
 
@@ -36,31 +46,37 @@ correctly. See the SPEC DEVIATION in `filtering.process`, and
 `src/no_layups/static/sample.swing.json` is the same artifact, serving as the
 viewer's demo asset. It is ~1.4 MB and the browser fetches it on page load.
 
-## Why the camera angle matters more than the pixels
+## Why the clip matters more than the pixels
 
-An earlier reference used a face-on clip of the same golfer. Swapping to this
-angled view changed the metrics far more than resolution did:
+An earlier reference used a different clip of the same golfer. Swapping to this
+one changed the metrics far more than resolution did:
 
-| metric | face-on clip | this clip | plausible (13.2) |
+| metric | earlier clip | this clip | plausible (13.2) |
 | --- | --- | --- | --- |
 | shoulder_turn_top | 11.4 deg | **59.9 deg** | 60-110 |
 | hip_turn_top | 9.2 deg | 25.9 deg | — |
 | x_factor | 2.2 deg | **34.0 deg** | — |
 | head_sway_top | 12.5 cm | 1.2 cm | <= 5 good |
 
-(The face-on column predates the canonical-frame fix below and is kept only
-for the angle comparison; the middle column is current.)
+(The first column predates the canonical-frame fixes below and is kept only as
+a before/after; the middle column is current.)
 
-Turn metrics are read off the depth axis (Section 8.1 drops Y and measures
-rotation in the ground plane). On a face-on clip the shoulder line points
-almost straight at the camera at the top of the backswing, so the rotation
-lives entirely in the least reliable channel and reads as a fraction of its
-true value. An angled view puts the same rotation partly in the image plane
-where MediaPipe is accurate.
+The original explanation here was that the old clip was face-on and this one
+angled, so this one put the rotation partly in the image plane where MediaPipe
+is accurate. **That explanation is wrong** — measured, this clip is face-on
+too (8.5 deg). Whatever separates the two clips, camera angle is not it.
 
-So "monocular depth cannot measure rotation" was too strong a conclusion. It
-measures rotation poorly *from a face-on view*, which is the view golfers
-default to filming.
+The underlying mechanic still holds and still costs us: turn metrics are read
+off the depth axis (Section 8.1 drops Y and measures rotation in the ground
+plane), and on a face-on view the shoulder line points nearly straight at the
+camera at the top of the backswing, so the rotation lives in the least
+reliable channel. That is a fixed cost of the face-on-only scope, not
+something a different clip escapes.
+
+The honest read on the improvement is that it came from the pipeline fixes
+listed below plus clip quality, not from geometry. Worth re-deriving properly
+if the reference is ever replaced, rather than inheriting this paragraph's
+reasoning.
 
 Section 13.2's ranges are all but met now — shoulder turn 59.9 against 60-110,
 lead elbow 140.0 against 150-180 — but absolute turn values still read low.
@@ -202,10 +218,12 @@ bias when **both** sides carry it. That is the whole reason the rating is
 reference-relative, and it is why the reference must come from real footage
 through the normal pipeline.
 
-Cancellation is still only partial, and now demonstrably view-dependent: an
-upload shot face-on will not cancel against this angled reference. That is the
-strongest argument for eventually keeping one reference per camera view, since
-Section 13.2 requires acceptance on both face-on and down-the-line.
+Cancellation is still only partial, but it is no longer view-dependent in the
+way this file used to claim: V1 accepts face-on footage only and this reference
+is face-on, so uploads and reference share a camera view by construction. If
+down-the-line is ever brought into scope it needs its own bundled reference —
+one reference cannot serve two views, because the bias it is meant to cancel
+is different in each.
 
 ## Known soft spot
 
