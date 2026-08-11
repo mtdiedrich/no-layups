@@ -18,6 +18,50 @@
         font-size: 1.1rem;
         margin: 0;
       }
+      section {
+        display: none;
+      }
+      section.active {
+        display: block;
+      }
+      #upload-screen {
+        max-width: 480px;
+        margin: 3rem auto;
+        padding: 1.5rem;
+      }
+      #drop-zone {
+        border: 2px dashed #333846;
+        border-radius: 8px;
+        padding: 2.5rem 1rem;
+        text-align: center;
+        cursor: pointer;
+        margin-bottom: 1rem;
+      }
+      #drop-zone.drag-over {
+        border-color: #4dd0e1;
+        color: #4dd0e1;
+      }
+      #upload-screen fieldset {
+        border: 1px solid #333846;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+      }
+      #upload-screen .field-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
+      #upload-error {
+        color: #ff6b6b;
+        margin-bottom: 1rem;
+        white-space: pre-wrap;
+      }
+      #processing-screen {
+        max-width: 480px;
+        margin: 5rem auto;
+        text-align: center;
+      }
       #viewer-canvas {
         display: block;
         width: 100%;
@@ -31,12 +75,18 @@
         padding: 0.75rem 1rem;
       }
       #controls button,
-      #controls select {
+      #controls select,
+      #upload-screen button,
+      #upload-screen select {
         background: #1c1f27;
         color: #e6e8ef;
         border: 1px solid #333846;
         border-radius: 4px;
         padding: 0.35rem 0.7rem;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
       #frame-slider {
         flex: 1;
@@ -61,21 +111,48 @@
     <header>
       <h1>No Layups</h1>
     </header>
-    <canvas id="viewer-canvas"></canvas>
-    <div id="controls">
-      <button id="play-pause">Play</button>
-      <select id="speed-select">
-        <option value="0.25">0.25&times;</option>
-        <option value="0.5">0.5&times;</option>
-        <option value="1" selected>1&times;</option>
-      </select>
-      <input id="frame-slider" type="range" min="0" max="0" value="0" />
-      <span id="frame-label">Frame 0</span>
-      <button id="cam-face-on">Face-on</button>
-      <button id="cam-down-the-line">Down-the-line</button>
-      <button id="cam-top">Top</button>
-      <label><input id="mirror-toggle" type="checkbox" /> Mirror</label>
-    </div>
+
+    <section id="upload-screen" class="active">
+      <div id="upload-error" hidden></div>
+      <form id="upload-form">
+        <div id="drop-zone">
+          <p>Drop a swing video here, or click to choose a file</p>
+          <input id="video-input" type="file" accept="video/*" hidden />
+          <p id="selected-file"></p>
+        </div>
+        <fieldset>
+          <legend>Handedness</legend>
+          <label><input type="radio" name="handedness" value="right" checked /> Right-handed</label>
+          <label><input type="radio" name="handedness" value="left" /> Left-handed</label>
+        </fieldset>
+        <button id="upload-submit" type="submit" disabled>Analyze swing</button>
+      </form>
+    </section>
+
+    <section id="processing-screen">
+      <p id="processing-step">Analyzing motion&hellip;</p>
+      <button id="processing-cancel" type="button" hidden>Try again</button>
+    </section>
+
+    <section id="analysis-screen">
+      <canvas id="viewer-canvas"></canvas>
+      <div id="controls">
+        <button id="play-pause">Play</button>
+        <select id="speed-select">
+          <option value="0.25">0.25&times;</option>
+          <option value="0.5">0.5&times;</option>
+          <option value="1" selected>1&times;</option>
+        </select>
+        <input id="frame-slider" type="range" min="0" max="0" value="0" />
+        <span id="frame-label">Frame 0</span>
+        <button id="cam-face-on">Face-on</button>
+        <button id="cam-down-the-line">Down-the-line</button>
+        <button id="cam-top">Top</button>
+        <label><input id="mirror-toggle" type="checkbox" /> Mirror</label>
+        <button id="new-swing">Analyze another swing</button>
+      </div>
+    </section>
+
     <script type="module" src="/app.js"></script>
   </body>
 </html>
